@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NueTab</title>
+    <link href="style.css" rel="stylesheet">
+</head>
+<body>
+
+    <div id="bg-layer"></div>
+    <div id="bg-overlay"></div>
+    <video id="video-bg" loop muted autoplay></video>
+
+    <!-- 拖拽删除区域 (新增) -->
+    <div id="trash-zone">
+        <span>🗑️ 拖入此处删除</span>
+    </div>
+
+    <!-- 主布局容器 -->
+    <div class="layout-container" id="layout-root"></div>
+
+    <!-- 底部触发器 -->
+    <div class="bottom-trigger" id="bottom-trigger">
+        <span>﹀ 更多应用 ﹀</span>
+    </div>
+
+    <!-- 底部抽屉：应用库 -->
+    <div class="drawer-container theme-panel" id="drawer-extended">
+        <div class="drawer-header">
+            <div class="drawer-title">应用库</div>
+            <div class="drawer-close" id="close-drawer-ext">✕</div>
+        </div>
+        <div class="drawer-body">
+            <div class="category-nav" id="category-tabs"></div>
+            <div class="ext-grid-wrapper" id="extended-list"></div>
+        </div>
+    </div>
+
+    <!-- 右侧边栏 -->
+    <div id="sidebar-overlay"></div>
+    <div class="right-sidebar theme-panel" id="right-sidebar">
+        <div class="sidebar-split-layout">
+            <div class="sidebar-nav-col">
+                <div class="sidebar-header-mini">导航</div>
+                <div id="sidebar-nav-list"></div>
+            </div>
+            <div class="sidebar-content-col">
+                <div class="sidebar-header-main">
+                    <span id="sidebar-content-title">内容</span>
+                    <div class="sidebar-close-btn" id="close-sidebar">✕</div>
+                </div>
+                <div class="sidebar-breadcrumb" id="sidebar-crumb" style="display:none;"></div>
+                <div id="sidebar-content-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 操作按钮 -->
+    <div class="action-buttons">
+        <div class="fab" id="btn-add">+</div>
+        <div class="fab" id="btn-settings">⚙</div>
+    </div>
+
+    <!-- 侧边栏右键菜单 -->
+    <div class="ctx-menu theme-panel" id="sidebar-ctx-menu">
+        <div class="ctx-item" id="ctx-add-home">添加到主页</div>
+        <div class="ctx-item" id="ctx-add-lib">添加到应用库</div>
+        <div class="ctx-divider"></div>
+        <div class="ctx-item ctx-danger" id="ctx-delete">删除</div>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div class="modal" id="modal-settings">
+        <div class="settings-layout theme-panel">
+            <div class="settings-sidebar">
+                <div class="sidebar-item active" id="menu-gen" data-tab="tab-general">常规</div>
+                <div class="sidebar-item" id="menu-lay" data-tab="tab-layout">布局与背景</div>
+                <div class="sidebar-item" id="menu-sty" data-tab="tab-style">样式与颜色</div>
+                <div class="sidebar-item" id="menu-eng" data-tab="tab-engines">搜索引擎</div>
+                <div class="sidebar-item" id="menu-dat" data-tab="tab-data">数据维护</div>
+                <div class="sidebar-item" id="menu-abo" data-tab="tab-about">关于</div>
+            </div>
+            <div class="settings-content-wrapper">
+                <div class="settings-header-fixed">
+                    <h3 id="settings-title">常规设置</h3>
+                    <div class="close-settings-btn" id="close-settings">✕</div>
+                </div>
+                <div class="settings-scroll-area">
+                    <!-- 常规 -->
+                    <div id="tab-general" class="settings-tab active" data-title="常规设置">
+                        <div class="form-group">
+                            <label>链接打开方式</label>
+                            <select class="form-control" id="link-target">
+                                <option value="_self">当前窗口 (_self)</option>
+                                <option value="_blank">新窗口 (_blank)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>界面交互</label>
+                            <div style="display:flex; flex-direction:column; gap:10px; background:var(--theme-input-bg); padding:15px; border-radius:8px; border:1px solid var(--theme-border);">
+                                <div style="display:flex; align-items:center; gap:10px;">
+                                    <input type="checkbox" id="layout-edit-toggle">
+                                    <span>启用主页模块拖拽排序</span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:10px;">
+                                    <input type="checkbox" id="weather-show-toggle">
+                                    <span>显示天气组件</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>更多页交互模式</label>
+                            <select class="form-control" id="nav-mode">
+                                <option value="scroll">鼠标滚轮下滑展开</option>
+                                <option value="click">点击底部按钮展开</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>天气设置 (搜索城市)</label>
+                            <div class="form-row">
+                                <input type="text" class="form-control" id="city-search" placeholder="输入城市名">
+                                <button class="btn btn-primary" id="btn-search-city">搜索</button>
+                            </div>
+                            <small id="curr-city-lbl" style="display:block;margin-top:5px;opacity:0.6">当前: -</small>
+                        </div>
+                        <div class="form-group">
+                            <label>分类管理</label>
+                            <button class="btn btn-secondary" style="width:100%" id="btn-manage-cats">管理分类</button>
+                        </div>
+                    </div>
+                    <!-- 布局 -->
+                    <div id="tab-layout" class="settings-tab" data-title="布局与背景">
+                        <div class="form-group">
+                            <label style="color:var(--accent-color)">头部对齐方式</label>
+                            <select class="form-control" id="header-align">
+                                <option value="right">右对齐</option>
+                                <option value="center">居中对齐</option>
+                                <option value="left">左对齐</option>
+                                <option value="split">两端对齐</option>
+                            </select>
+                        </div>
+                        <hr style="border:0; border-top:1px solid var(--theme-border); margin:20px 0;">
+                        <div class="form-group">
+                            <label>背景设置</label>
+                            <select class="form-control" id="bg-type" style="margin-bottom:10px">
+                                <option value="bing">Bing 每日壁纸</option>
+                                <option value="color">纯色 / 渐变</option>
+                                <option value="image">自定义图片</option>
+                                <option value="video">视频 URL</option>
+                            </select>
+                            <div class="form-row" id="bg-val-wrapper">
+                                <input type="text" class="form-control" id="bg-value" placeholder="URL / 颜色代码">
+                                <button class="btn btn-upload" id="btn-upload-bg">上传</button>
+                                <input type="file" id="bg-file" accept="image/*">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>图片填充方式</label>
+                            <select class="form-control" id="bg-fit">
+                                <option value="cover">Cover (拉伸填满)</option>
+                                <option value="contain">Contain (完整显示)</option>
+                                <option value="repeat">Repeat (平铺)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>背景模糊</label>
+                            <input type="range" min="0" max="50" id="bg-blur">
+                        </div>
+                        <hr style="border:0; border-top:1px solid var(--theme-border); margin:20px 0;">
+                        <div class="form-group"><label>页面左右边距</label><input type="range" min="0" max="20" id="page-pad-h"></div>
+                        <div class="form-group"><label>组件垂直间距</label><input type="range" min="1" max="10" id="widget-gap"></div>
+                        <div class="form-group"><label>图标网格内边距</label><input type="range" min="0" max="100" id="grid-padding"></div>
+                        <div class="form-group"><label>网格列数</label><input type="range" min="3" max="10" id="grid-cols"></div>
+                    </div>
+                    <!-- 样式 -->
+                    <div id="tab-style" class="settings-tab" data-title="样式与颜色">
+                        <div class="form-group">
+                            <label>全局主题样式</label>
+                            <select class="form-control" id="search-style">
+                                <option value="dark">暗色 (Dark)</option>
+                                <option value="light">亮色 (Light)</option>
+                                <option value="glass">毛玻璃 (Glass)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>图标源 (Icon Source Template)</label>
+                            <div style="font-size:0.8rem;color:var(--theme-subtext);margin-bottom:5px">使用 {domain} 代表域名。</div>
+                            <input type="text" class="form-control" id="icon-source-pattern" placeholder="例如: https://icons.duckduckgo.com/ip3/{domain}.ico">
+                        </div>
+                        <div class="form-group"><label>组件圆角</label><input type="range" min="0" max="30" id="search-radius"></div>
+                        <div class="form-group"><label>图标背景圆角</label><input type="range" min="0" max="32" id="icon-radius"></div>
+                        <div class="form-group"><label>图标背景不透明度</label><input type="range" min="0" max="100" id="icon-opacity"></div>
+                        <hr style="border:0; border-top:1px solid var(--theme-border); margin:20px 0;">
+                        <div class="form-group"><label>时间字体颜色</label><div class="form-row"><input type="text" class="form-control" id="col-time"><input type="color" id="picker-time"></div></div>
+                        <div class="form-group"><label>日期字体颜色</label><div class="form-row"><input type="text" class="form-control" id="col-date"><input type="color" id="picker-date"></div></div>
+                        <div class="form-group"><label>天气字体颜色</label><div class="form-row"><input type="text" class="form-control" id="col-weather"><input type="color" id="picker-weather"></div></div>
+                    </div>
+                    <!-- 引擎 -->
+                    <div id="tab-engines" class="settings-tab" data-title="搜索引擎">
+                        <div class="form-group">
+                             <div style="display:flex; align-items:center; gap:10px; background:var(--theme-input-bg); padding:12px; border-radius:8px; border:1px solid var(--theme-border); margin-bottom:20px;">
+                                <input type="checkbox" id="search-sug">
+                                <span>启用搜索建议 (联想词)</span>
+                            </div>
+                        </div>
+                        <div id="engine-list-editor"></div>
+                        <button class="btn btn-secondary" style="width:100%; margin-top:10px" id="btn-add-engine">+ 添加自定义引擎</button>
+                    </div>
+                    <!-- 数据 -->
+                    <div id="tab-data" class="settings-tab" data-title="数据维护">
+                        <div style="padding:15px; background:rgba(0,0,0,0.2); border-radius:8px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
+                            <span>本地缓存</span><span id="cache-stat">Loading...</span>
+                        </div>
+                        <button class="btn btn-secondary" style="width:100%; margin-bottom:20px" id="btn-clear-cache">清理缓存</button>
+                        <div style="display:flex; gap:10px;">
+                            <button class="btn btn-secondary" style="flex:1" id="btn-export">导出配置</button>
+                            <button class="btn btn-danger" style="flex:1" id="btn-reset">完全重置</button>
+                        </div>
+                    </div>
+                    <!-- 关于 -->
+                    <div id="tab-about" class="settings-tab" data-title="关于 NueTab">
+                        <div style="text-align:center; padding: 40px 0;">
+                            <h2 style="color:var(--accent-color); margin-bottom:10px;">NueTab</h2>
+                            <p style="color:var(--theme-subtext); margin-bottom:30px;">一个极简、高度可定制的新标签页扩展</p>
+                            
+                            <div style="background:var(--theme-input-bg); padding:20px; border-radius:12px; border:1px solid var(--theme-border); display:inline-block; text-align:left;">
+                                <div style="margin-bottom:10px;"><strong>GitHub 仓库:</strong></div>
+                                <a href="https://github.com/wuko233/nuetab" target="_blank" style="color:var(--accent-color); text-decoration:none; word-break:break-all;">https://github.com/wuko233/nuetab</a>
+                            </div>
+                            <div style="margin-top:40px; color:var(--theme-subtext); font-size:0.8rem;">
+                                Version 1.0
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 弹窗: 编辑快捷方式 -->
+    <div class="modal" id="modal-shortcut">
+        <div class="panel theme-panel">
+            <h3>编辑图标</h3><br>
+            <input type="hidden" id="edit-id">
+            <div class="form-group"><label>名称</label><input type="text" class="form-control" id="item-name"></div>
+            <div class="form-group"><label>链接 (URL)</label><input type="text" class="form-control" id="item-url" placeholder="支持 http://"></div>
+            <div class="form-group">
+                <label>图标 (URL / Upload / SVG代码)</label>
+                <div class="form-row">
+                    <input type="text" class="form-control" id="item-icon" placeholder="留空自动获取">
+                    <button class="btn btn-upload" id="btn-upload-icon">上传</button>
+                    <input type="file" id="icon-file" accept="image/*">
+                </div>
+            </div>
+            <div style="display:flex; gap:15px;">
+                <div class="form-group" style="flex:1">
+                    <label>图标颜色 (SVG有效)</label>
+                    <div class="form-row"><input type="text" class="form-control" id="item-svg-color"><input type="color" id="picker-svg-color"></div>
+                </div>
+                <div class="form-group" style="flex:1">
+                    <label>SVG 图标大小 (%)</label>
+                    <div style="display:flex;align-items:center;height:42px;"><input type="range" min="10" max="100" id="item-svg-size"></div>
+                </div>
+            </div>
+            <div class="form-group"><label>分类</label><select class="form-control" id="item-cat"></select></div>
+            
+            <div class="form-group">
+                <label>显示位置</label>
+                <div style="display:flex; gap:20px; background:var(--theme-input-bg); padding:10px; border-radius:8px;">
+                    <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer; color:var(--theme-text);">
+                        <input type="checkbox" id="chk-loc-main"> 主页网格
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer; color:var(--theme-text);">
+                        <input type="checkbox" id="chk-loc-ext"> 应用库
+                    </label>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:10px; margin-top:20px;">
+                <button class="btn btn-secondary" style="flex:1" id="btn-close-shortcut">取消</button>
+                <button class="btn btn-primary" style="flex:1" id="btn-save-shortcut">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 弹窗: 编辑引擎 -->
+    <div class="modal" id="modal-engine">
+        <div class="panel theme-panel">
+            <h3>编辑搜索引擎</h3><br>
+            <input type="hidden" id="eng-id">
+            <div class="form-group"><label>名称</label><input type="text" class="form-control" id="eng-name"></div>
+            <div class="form-group"><label>搜索 URL</label><input type="text" class="form-control" id="eng-url"></div>
+            <div class="form-group">
+                <label>图标 URL / Upload</label>
+                <div class="form-row">
+                    <input type="text" class="form-control" id="eng-icon">
+                    <button class="btn btn-upload" id="btn-upload-eng-icon">上传</button>
+                    <input type="file" id="eng-file" accept="image/*">
+                </div>
+            </div>
+            <div style="display:flex; gap:10px; margin-top:20px;">
+                 <button class="btn btn-secondary" style="flex:1" id="btn-close-engine">取消</button>
+                 <button class="btn btn-primary" style="flex:1" id="btn-save-engine">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 弹窗: 分类编辑 -->
+    <div class="modal" id="modal-cat-edit">
+        <div class="panel theme-panel">
+            <h3>编辑分类</h3><br>
+            <input type="hidden" id="cat-edit-id">
+            <div class="form-group"><label>名称</label><input type="text" class="form-control" id="cat-edit-name"></div>
+            <div class="form-group"><label>图标</label><div class="form-row"><input type="text" class="form-control" id="cat-edit-icon"><button class="btn btn-upload" id="btn-upload-cat-icon">上传</button><input type="file" id="cat-file" accept="image/*"></div></div>
+            <button class="btn btn-primary" style="width:100%" id="btn-save-cat">保存</button>
+        </div>
+    </div>
+    
+    <!-- 弹窗: 分类管理 -->
+    <div class="modal" id="modal-cats">
+        <div class="panel theme-panel" style="width:500px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:20px"><h3>分类管理</h3><span id="btn-close-cats" style="cursor:pointer">✕</span></div>
+            <div id="cat-list-editor" style="max-height:300px;overflow-y:auto;margin-bottom:20px"></div>
+            <div style="border-top:1px solid var(--theme-border); padding-top:15px"><button class="btn btn-primary" style="width:100%" id="btn-add-cat">+ 添加新分类</button></div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
