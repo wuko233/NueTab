@@ -1,16 +1,22 @@
 {
   "manifest_version": 3,
   "name": "NueTab",
-  "version": "1.1",
+  "version": "1.1.1",
   "description": "高度可自定义的新标签页，支持历史与收藏夹管理",
   "permissions": [
     "storage",
     "history",
     "bookmarks",
     "favicon",
-    "contextMenus",
-    "notifications"
+    "activeTab",
+    "tabs"
   ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "128": "icon.png"
+    }
+  },
   "host_permissions": [
     "https://sp0.baidu.com/*",
     "https://suggestion.baidu.com/*",
