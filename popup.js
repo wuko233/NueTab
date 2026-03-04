@@ -20,7 +20,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Open new tab
     document.getElementById('open-newtab').addEventListener('click', () => {
-      chrome.tabs.create({ url: 'nuetab.html' });
+      // 打开新标签页（使用 chrome.tabs.create）
+      chrome.tabs.create({ url: chrome.runtime.getURL('nuetab.html') });
       window.close();
     });
   });
@@ -35,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // 使用 chrome.storage.sync 或 local，与主页面保持一致
     chrome.storage.local.get(['nuetab_ult_data'], (result) => {
       let data;
       try {
@@ -75,7 +77,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       data.shortcuts.push(newItem);
       chrome.storage.local.set({ nuetab_ult_data: JSON.stringify(data) }, () => {
-        showStatus(`已添加到${location === 'main' ? '首页' : '应用库'}`, 'success');
+        if (chrome.runtime.lastError) {
+          console.error('Save error:', chrome.runtime.lastError);
+          showStatus('保存失败', 'error');
+        } else {
+          showStatus(`已添加到${location === 'main' ? '首页' : '应用库'}`, 'success');
+        }
       });
     });
   }
