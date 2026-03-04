@@ -101,7 +101,7 @@ class NueTab {
         await this.applyTheme();
         this.setupEvents();
     }
-    save() { localStorage.setItem('nuetab_ult_data', JSON.stringify(this.data)); }
+    save() { localStorage.setItem('nuetab_ult_data', JSON.stringify(this.data)); if(typeof chrome!=='undefined'&&chrome.storage) chrome.storage.local.set({nuetab_ult_data: JSON.stringify(this.data)}); }
 
     getIconUrl(pageUrl) {
         if(!pageUrl || pageUrl.startsWith('ext://')) return null;
@@ -840,3 +840,36 @@ class NueTab {
 }
 
 window.app = new NueTab();
+
+// 监听来自 background 的消息
+if (typeof chrome !== 'undefined' && chrome.runtime) {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'addShortcut') {
+      const newItem = message.shortcut;
+      // 检查是否已存在
+      const exists = window.app.data.shortcuts.some(s => s.url === newItem.url);
+      if (!exists) {
+        newItem.cat = window.app.data.categories[0]?.id || 'c_sys';
+        window.app.data.shortcuts.push(newItem);
+        window.app.save();
+        window.app.renderShortcuts();
+        window.app.renderExtendedList();
+        sendResponse({ success: true });
+      } else {
+        sendResponse({ success: false, message: '已存在' });
+      }
+    }
+    return true;
+  });
+  
+  // 从 chrome.storage 加载数据（如果有）
+  chrome.storage.local.get(['nuetab_ult_data'], (result) => {
+    if (result.nuetab_ult_data && !localStorage.getItem('nuetab_ult_data')) {
+      localStorage.setItem('nuetab_ult_data', result.nuetab_ult_data);
+      if (window.app) {
+        window.app.loadData();
+        window.app.renderShortcuts();
+      }
+    }
+  });
+}

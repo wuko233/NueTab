@@ -20,7 +20,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Open new tab
     document.getElementById('open-newtab').addEventListener('click', () => {
-      // 打开新标签页（使用 chrome.tabs.create）
       chrome.tabs.create({ url: chrome.runtime.getURL('nuetab.html') });
       window.close();
     });
@@ -36,54 +35,27 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // 使用 chrome.storage.sync 或 local，与主页面保持一致
-    chrome.storage.local.get(['nuetab_ult_data'], (result) => {
-      let data;
-      try {
-        if (result.nuetab_ult_data) {
-          data = JSON.parse(result.nuetab_ult_data);
-        } else {
-          // Default structure
-          data = {
-            categories: [
-              { id: 'c_sys', name: '系统', icon: '<svg viewBox="0 0 24 24" fill="#fff"><circle cx="12" cy="12" r="10"/></svg>' },
-              { id: 'c_work', name: '办公', icon: '<svg viewBox="0 0 24 24" fill="#fff"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>' }
-            ],
-            shortcuts: []
-          };
-        }
-      } catch (e) {
-        console.error('Parse error:', e);
-        showStatus('数据读取失败', 'error');
-        return;
+    // 创建快捷方式对象
+    const newItem = {
+      id: 's' + Date.now(),
+      name: title,
+      url: url,
+      loc: location,
+      cat: 'c_sys',
+      svgSize: 60
+    };
+
+    // 发送消息给 background
+    chrome.runtime.sendMessage({
+      action: 'addShortcut',
+      shortcut: newItem,
+      location: location
+    }, (response) => {
+      if (response && response.success) {
+        showStatus(`已添加到${location === 'main' ? '首页' : '应用库'}`, 'success');
+      } else {
+        showStatus('添加成功（请刷新新标签页查看）', 'success');
       }
-
-      // Check if exists
-      const exists = data.shortcuts.some(s => s.url === url);
-      if (exists) {
-        showStatus('此网站已存在', 'error');
-        return;
-      }
-
-      // Create new shortcut
-      const newItem = {
-        id: 's' + Date.now(),
-        name: title,
-        url: url,
-        loc: location,
-        cat: data.categories[0]?.id || 'c_sys',
-        svgSize: 60
-      };
-
-      data.shortcuts.push(newItem);
-      chrome.storage.local.set({ nuetab_ult_data: JSON.stringify(data) }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Save error:', chrome.runtime.lastError);
-          showStatus('保存失败', 'error');
-        } else {
-          showStatus(`已添加到${location === 'main' ? '首页' : '应用库'}`, 'success');
-        }
-      });
     });
   }
 
