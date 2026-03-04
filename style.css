@@ -74,7 +74,7 @@ body.layout-editing .widget-block { border: 2px dashed rgba(255,255,255,0.2); bo
 .engine-select { width: 48px; height: 44px; display: flex; justify-content: center; align-items: center; cursor: pointer; border-radius: 12px; transition: 0.2s; flex-shrink: 0; position: relative; }
 .engine-select:hover { background: var(--theme-hover); }
 .engine-select img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
-.engine-dropdown { position: absolute; top: 120%; left: 0; background: var(--theme-bg); border: 1px solid var(--theme-border); border-radius: 12px; padding: 5px; display: none; flex-direction: column; width: 160px; z-index: 100; box-shadow: var(--theme-shadow); backdrop-filter: var(--theme-backdrop); }
+.engine-dropdown { position: absolute; top: 120%; left: 0; background: var(--theme-bg); border: 1px solid var(--theme-border); border-radius: 12px; padding: 5px; display: none; flex-direction: column; width: 160px; z-index: 200; box-shadow: var(--theme-shadow); backdrop-filter: var(--theme-backdrop); }
 .engine-dropdown.show { display: flex; }
 .engine-item { display: flex; align-items: center; gap: 10px; padding: 10px; cursor: pointer; border-radius: 8px; color: var(--theme-text); }
 .engine-item:hover { background: var(--accent-color); color: #000; }
