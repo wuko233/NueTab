@@ -605,6 +605,21 @@ class NueTab {
         document.getElementById('btn-clear-cache').onclick = () => assetManager.clear();
         document.getElementById('btn-reset').onclick = () => { if(confirm('重置?')) { localStorage.removeItem('nuetab_ult_data'); location.reload(); }};
         document.getElementById('btn-export').onclick = () => { const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(this.data)],{type:'application/json'})); a.download='backup.json'; a.click(); };
+        document.getElementById('btn-import').onclick = () => document.getElementById('import-file').click();
+        document.getElementById('import-file').onchange = (e) => {
+            const file = e.target.files[0]; if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const imported = JSON.parse(ev.target.result);
+                    if(!imported.settings || !imported.shortcuts) { alert('无效的配置文件'); return; }
+                    this.data = imported;
+                    this.save(); location.reload();
+                } catch(err) { alert('配置文件解析失败'); }
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        };
 
         /* -----------------------------------------------------
            FIXED SEARCH SUGGESTIONS: Extract only the 's' array
