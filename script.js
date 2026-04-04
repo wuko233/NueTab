@@ -76,13 +76,14 @@ const DEFAULT_DATA = {
 class NueTab {
     constructor() {
         this.loadData();
-        this.state = { 
-            catFilter: this.data.categories[0]?.id || 'all', 
-            dragSrc: null, 
+        this.state = {
+            catFilter: this.data.categories[0]?.id || 'all',
+            dragSrc: null,
             dragType: null,
-            widgetDragSrc: null, 
+            widgetDragSrc: null,
             sidebarOpen: false,
-            ctxData: null 
+            ctxData: null,
+            suggIndex: -1
         };
         try { this.init(); } catch (e) { console.error(e); }
     }
@@ -662,9 +663,30 @@ class NueTab {
                 }, 200);
             });
             inp.addEventListener('keydown', e => {
-                if(e.key === 'Enter') {
-                    const eng = this.data.engines.find(x => x.id === this.data.settings.currEngine);
-                    window.open(eng.url.replace('%s', encodeURIComponent(inp.value)), this.data.settings.linkTarget || '_self');
+                const box = document.getElementById('suggestions-box');
+                const items = box ? box.querySelectorAll('.suggestion-item') : [];
+                if(e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if(!items.length) return;
+                    this.state.suggIndex = Math.min(this.state.suggIndex + 1, items.length - 1);
+                    this.highlightSugg(items);
+                } else if(e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if(!items.length) return;
+                    this.state.suggIndex = Math.max(this.state.suggIndex - 1, -1);
+                    this.highlightSugg(items);
+                } else if(e.key === 'Enter') {
+                    if(this.state.suggIndex >= 0 && items[this.state.suggIndex]) {
+                        items[this.state.suggIndex].click();
+                    } else {
+                        const eng = this.data.engines.find(x => x.id === this.data.settings.currEngine);
+                        window.open(eng.url.replace('%s', encodeURIComponent(inp.value)), this.data.settings.linkTarget || '_self');
+                    }
+                    box?.classList.remove('active');
+                    this.state.suggIndex = -1;
+                } else if(e.key === 'Escape') {
+                    box?.classList.remove('active');
+                    this.state.suggIndex = -1;
                 }
             });
         }
@@ -719,6 +741,7 @@ class NueTab {
     }
     sugg(d) {
         const b = document.getElementById('suggestions-box'); if(!b) return; b.innerHTML = '';
+        this.state.suggIndex = -1;
         if(d.s && d.s.length) {
             const frag = document.createDocumentFragment();
             d.s.slice(0,6).forEach(t => {
@@ -730,6 +753,17 @@ class NueTab {
         } else b.classList.remove('active');
     }
     startClock() { this.updateClockDate(); setInterval(() => this.updateClockDate(), 1000); }
+    highlightSugg(items) {
+        const inp = document.getElementById('search-input');
+        items.forEach((el, i) => {
+            if(i === this.state.suggIndex) {
+                el.style.background = 'var(--accent-color)'; el.style.color = '#000';
+                if(inp) inp.value = el.innerText;
+            } else {
+                el.style.background = ''; el.style.color = '';
+            }
+        });
+    }
     toggleLayoutEdit(enabled) { document.body.classList.toggle('layout-editing', enabled); document.querySelectorAll('.widget-block').forEach(el => el.draggable = enabled); }
     searchCity() {
         const q = document.getElementById('city-search').value; if(!q) return;
