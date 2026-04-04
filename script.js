@@ -692,7 +692,7 @@ class NueTab {
     bindSearchEvents() {
         const btn = document.getElementById('engine-select-btn');
         if(btn) {
-            btn.onclick = (e) => { e.stopPropagation(); document.getElementById('engine-drop').classList.toggle('show'); };
+            btn.onclick = (e) => { e.stopPropagation(); document.getElementById('suggestions-box')?.classList.remove('active'); document.getElementById('engine-drop').classList.toggle('show'); };
             btn.oncontextmenu = (e) => { e.preventDefault(); this.openEngineEdit(this.data.settings.currEngine); };
         }
         document.addEventListener('click', e => {
