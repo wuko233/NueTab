@@ -668,6 +668,7 @@ class NueTab {
                 if(e.key === 'ArrowDown') {
                     e.preventDefault();
                     if(!items.length) return;
+                    if(this.state.suggIndex === -1) this.state._origInput = inp.value;
                     this.state.suggIndex = Math.min(this.state.suggIndex + 1, items.length - 1);
                     this.highlightSugg(items);
                 } else if(e.key === 'ArrowUp') {
@@ -763,6 +764,7 @@ class NueTab {
                 el.style.background = ''; el.style.color = '';
             }
         });
+        if(this.state.suggIndex === -1 && inp) inp.value = this.state._origInput || '';
     }
     toggleLayoutEdit(enabled) { document.body.classList.toggle('layout-editing', enabled); document.querySelectorAll('.widget-block').forEach(el => el.draggable = enabled); }
     searchCity() {
