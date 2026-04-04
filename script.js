@@ -15,7 +15,7 @@ class AssetManager {
     }
     loadImg(imgEl, url, letterEl) {
         if (!url || !imgEl) return;
-        if (url.startsWith('chrome-extension://') || url.startsWith('chrome://')) {
+        if (url.startsWith('chrome-extension://') || url.startsWith('moz-extension://') || url.startsWith('chrome://')) {
             imgEl.src = url; imgEl.style.display = 'block';
             if(letterEl) letterEl.style.display = 'none';
             return;

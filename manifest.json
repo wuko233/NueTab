@@ -7,7 +7,6 @@
     "storage",
     "history",
     "bookmarks",
-    "favicon",
     "activeTab",
     "tabs"
   ],
@@ -28,15 +27,25 @@
     "*://*/favicon.ico"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": ["background.js"]
   },
   "chrome_url_overrides": {
     "newtab": "nuetab.html"
+  },
+  "browser_url_overrides": {
+    "newtab": "nuetab.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "nuetab@wuko233",
+      "strict_min_version": "109.0"
+    }
   },
   "icons": {
     "128": "icon.png"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: https: chrome-extension-resource:; connect-src 'self' https: http;"
+    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: https:; connect-src 'self' https:"
   }
 }

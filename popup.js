@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const title = tab.title || 'Untitled';
 
     // Skip chrome:// and extension pages
-    if (url.startsWith('chrome://') || url.startsWith('chrome-extension://')) {
+    if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('moz-extension://')) {
       showStatus('无法添加此页面', 'error');
       return;
     }
