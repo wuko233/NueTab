@@ -1,17 +1,27 @@
+function escapeHtml(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+function sanitizeSvg(svg) {
+    const s = svg.replace(/<script[\s\S]*?<\/script>/gi, '')
+                 .replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '')
+                 .replace(/\son\w+\s*=\s*[^\s>]+/gi, '');
+    return s;
+}
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
 /**
  * 资产管理器
  */
 class AssetManager {
     constructor() {
         this.dbName = 'NueTabDB'; this.storeName = 'assets'; this.db = null;
-        this.init();
+        this._ready = this.init();
     }
     async init() {
-        try {
+        return new Promise((resolve) => {
             const req = indexedDB.open(this.dbName, 1);
             req.onupgradeneeded = e => { if(!e.target.result.objectStoreNames.contains(this.storeName)) e.target.result.createObjectStore(this.storeName); };
-            req.onsuccess = e => { this.db = e.target.result; };
-        } catch(e) {}
+            req.onsuccess = e => { this.db = e.target.result; resolve(); };
+            req.onerror = () => resolve();
+        });
     }
     loadImg(imgEl, url, letterEl) {
         if (!url || !imgEl) return;
@@ -144,7 +154,7 @@ class NueTab {
                                 <img id="curr-engine-icon" src="" onerror="this.style.display='none'">
                                 <div class="engine-dropdown" id="engine-drop"></div>
                             </div>
-                            <input type="text" class="search-input" id="search-input" placeholder="Search..." autocomplete="off">
+                            <input type="text" class="search-input" id="search-input" placeholder="搜索..." autocomplete="off">
                         </div>
                         <div class="suggestions-box" id="suggestions-box"></div>
                     </div>`;
@@ -184,14 +194,14 @@ class NueTab {
             el.className = 'shortcut-item'; el.draggable = true; el.dataset.id = item.id;
             let iconHtml = '';
             if (item.icon && item.icon.startsWith('<svg')) {
-                let svgContent = item.icon;
+                let svgContent = sanitizeSvg(item.icon);
                 if(item.iconColor) svgContent = svgContent.replace('<svg', `<svg style="fill:${item.iconColor}; stroke:${item.iconColor}"`);
                 iconHtml = `<div class="icon-box">${svgContent}</div>`;
             } else {
                 const letter = item.name ? item.name[0].toUpperCase() : '?';
-                iconHtml = `<div class="icon-box"><div class="icon-letter">${letter}</div><img alt="" /></div>`;
+                iconHtml = `<div class="icon-box"><div class="icon-letter">${escapeHtml(letter)}</div><img alt="" /></div>`;
             }
-            el.innerHTML = `${iconHtml}<div class="item-title">${item.name}</div>`;
+            el.innerHTML = `${iconHtml}<div class="item-title">${escapeHtml(item.name)}</div>`;
             const svgEl = el.querySelector('svg');
             if(svgEl) {
                 const size = item.svgSize || 60; 
@@ -251,8 +261,8 @@ class NueTab {
             const btn = document.createElement('div');
             btn.className = `cat-btn ${this.state.catFilter === cat.id ? 'active' : ''}`;
             btn.draggable = true;
-            let iconHtml = cat.icon.startsWith('<svg') ? cat.icon : `<img src="${cat.icon || ''}" onerror="this.style.display='none'">`;
-            btn.innerHTML = `${iconHtml} <span>${cat.name}</span>`;
+            let iconHtml = cat.icon.startsWith('<svg') ? sanitizeSvg(cat.icon) : `<img src="${escapeHtml(cat.icon || '')}" onerror="this.style.display='none'">`;
+            btn.innerHTML = `${iconHtml} <span>${escapeHtml(cat.name)}</span>`;
             btn.onclick = () => { this.state.catFilter = cat.id; this.renderExtendedTabs(); this.renderExtendedList(); };
             btn.oncontextmenu = (e) => { e.preventDefault(); this.openCatEdit(cat.id); };
             btn.addEventListener('dragstart', (e) => { e.stopPropagation(); this.state.dragType = 'cat'; this.state.dragSrc = idx; });
@@ -310,9 +320,9 @@ class NueTab {
             a.onclick = () => this.handleShortcutClick(item);
             let iconHtml = `<img alt="" style="display:none">`;
             if(item.icon && item.icon.startsWith('<svg')) {
-                let svg = item.icon; if(item.iconColor) svg = svg.replace('<svg', `<svg style="fill:${item.iconColor}"`); iconHtml = svg;
+                let svg = sanitizeSvg(item.icon); if(item.iconColor) svg = svg.replace('<svg', `<svg style="fill:${item.iconColor}"`); iconHtml = svg;
             }
-            a.innerHTML = `${iconHtml} <span>${item.name}</span>`;
+            a.innerHTML = `${iconHtml} <span>${escapeHtml(item.name)}</span>`;
             if(!item.icon || !item.icon.startsWith('<svg')) {
                 const img = a.querySelector('img'); const url = item.icon || this.getIconUrl(item.url);
                 if(url) assetManager.loadImg(img, url);
@@ -387,7 +397,7 @@ class NueTab {
                         if(!child.url) { 
                             const div = document.createElement('div');
                             div.className = 'nav-item'; div.style.paddingLeft = (20 + depth * 15) + 'px';
-                            div.innerHTML = `<svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg> ${child.title}`;
+                            div.innerHTML = `<svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg> ${escapeHtml(child.title)}`;
                             div.onclick = () => { document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); div.classList.add('active'); this.loadBookmarksContent(child.id); };
                             navList.appendChild(div);
                         }
@@ -414,7 +424,7 @@ class NueTab {
         const data = this.state.ctxData;
         if(!data || !data.url) return;
         const newItem = {
-            id: 's' + Date.now(),
+            id: 's' + uid(),
             name: data.title,
             url: data.url,
             loc: targetLoc, 
@@ -450,7 +460,9 @@ class NueTab {
                     row.onclick = () => this.openLink(h.url);
                     row.oncontextmenu = (e) => this.openSidebarCtx(e, { type: 'history', url: h.url, title: h.title });
                     const time = new Date(h.lastVisitTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-                    row.innerHTML = `<div class="list-item-icon"><img alt="" /></div><div class="list-item-content"><div class="list-item-title">${h.title || h.url}</div><div class="list-item-meta">${new URL(h.url).hostname} • ${time}</div></div>`;
+                    let hostname = '';
+                    try { hostname = new URL(h.url).hostname; } catch(e) { hostname = h.url; }
+                    row.innerHTML = `<div class="list-item-icon"><img alt="" /></div><div class="list-item-content"><div class="list-item-title">${escapeHtml(h.title || h.url)}</div><div class="list-item-meta">${escapeHtml(hostname)} • ${time}</div></div>`;
                     const icon = this.getIconUrl(h.url);
                     if(icon) assetManager.loadImg(row.querySelector('img'), icon);
                     list.appendChild(row);
@@ -471,13 +483,13 @@ class NueTab {
                 node.children.forEach(bm => {
                     const row = document.createElement('div'); row.className = 'list-item-row';
                     if(bm.url) {
-                        row.innerHTML = `<div class="list-item-icon"><img alt=""></div><div class="list-item-content"><div class="list-item-title">${bm.title}</div><div class="list-item-meta">${bm.url}</div></div>`;
+                        row.innerHTML = `<div class="list-item-icon"><img alt=""></div><div class="list-item-content"><div class="list-item-title">${escapeHtml(bm.title)}</div><div class="list-item-meta">${escapeHtml(bm.url)}</div></div>`;
                         const icon = this.getIconUrl(bm.url);
                         if(icon) assetManager.loadImg(row.querySelector('img'), icon);
                         row.onclick = () => this.openLink(bm.url);
                         row.oncontextmenu = (e) => this.openSidebarCtx(e, { type: 'bookmark', id: bm.id, url: bm.url, title: bm.title, parentId: folderId });
                     } else {
-                        row.innerHTML = `<div class="list-item-icon"><svg viewBox="0 0 24 24" style="fill:#ffd700"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></div><div class="list-item-content"><div class="list-item-title">${bm.title}</div><div class="list-item-meta">文件夹</div></div>`;
+                        row.innerHTML = `<div class="list-item-icon"><svg viewBox="0 0 24 24" style="fill:#ffd700"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></div><div class="list-item-content"><div class="list-item-title">${escapeHtml(bm.title)}</div><div class="list-item-meta">文件夹</div></div>`;
                         row.onclick = () => this.loadBookmarksContent(bm.id);
                         row.oncontextmenu = (e) => e.preventDefault(); 
                     }
@@ -553,6 +565,8 @@ class NueTab {
             if(e.target.classList.contains('modal')) e.target.classList.remove('active');
             if(e.target.id === 'sidebar-overlay') this.closeSidebar();
             if(!e.target.closest('.ctx-menu') && !e.target.closest('.list-item-row')) document.getElementById('sidebar-ctx-menu').classList.remove('active');
+            if(!e.target.closest('.engine-select')) document.getElementById('engine-drop')?.classList.remove('show');
+            if(!e.target.closest('.search-container')) document.getElementById('suggestions-box')?.classList.remove('active');
         };
         window.onclick = closeModals;
         document.getElementById('close-settings').onclick = () => document.getElementById('modal-settings').classList.remove('active');
@@ -560,7 +574,8 @@ class NueTab {
         document.querySelectorAll('.sidebar-item').forEach(item => { item.onclick = () => { const tabId = item.dataset.tab; this.openSettingsTab(tabId); }; });
 
         const bind = (id, prop) => { const el = document.getElementById(id); if(el) el.onchange = (e) => this.updateSetting(prop, e.target.value); };
-        const bindInput = (id, prop) => { const el = document.getElementById(id); if(el) el.oninput = (e) => this.updateSetting(prop, e.target.value); };
+        let _debounce = null;
+        const bindInput = (id, prop) => { const el = document.getElementById(id); if(el) el.oninput = (e) => { const v = e.target.value; clearTimeout(_debounce); _debounce = setTimeout(() => this.updateSetting(prop, v), 150); } };
         
         bind('link-target', 'linkTarget'); bind('nav-mode', 'navMode'); bind('header-align', 'headerAlign');
         bind('bg-type', 'bgType'); bind('bg-fit', 'bgFit'); bindInput('bg-blur', 'bgBlur');
@@ -718,10 +733,6 @@ class NueTab {
             btn.onclick = (e) => { e.stopPropagation(); document.getElementById('suggestions-box')?.classList.remove('active'); document.getElementById('engine-drop').classList.toggle('show'); };
             btn.oncontextmenu = (e) => { e.preventDefault(); this.openEngineEdit(this.data.settings.currEngine); };
         }
-        document.addEventListener('click', e => {
-            if(!e.target.closest('.engine-select')) document.getElementById('engine-drop')?.classList.remove('show');
-            if(!e.target.closest('.search-container')) document.getElementById('suggestions-box')?.classList.remove('active');
-        });
         this.updateEngineIcon(); this.renderEngineDrop();
     }
     updateEngineIcon() {
@@ -733,7 +744,7 @@ class NueTab {
         const drop = document.getElementById('engine-drop'); if(!drop) return; drop.innerHTML = '';
         this.data.engines.forEach(eng => {
             const div = document.createElement('div'); div.className = 'engine-item';
-            div.innerHTML = `<img alt="" style="display:none"> ${eng.name}`;
+            div.innerHTML = `<img alt="" style="display:none"> ${escapeHtml(eng.name)}`;
             const img = div.querySelector('img'); let iconUrl = eng.icon; if(!iconUrl) iconUrl = this.getIconUrl(eng.url.split('?')[0]); if(iconUrl) assetManager.loadImg(img, iconUrl);
             div.onclick = (e) => { e.stopPropagation(); this.data.settings.currEngine = eng.id; this.save(); this.updateEngineIcon(); drop.classList.remove('show'); };
             div.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); this.openEngineEdit(eng.id); };
@@ -753,7 +764,7 @@ class NueTab {
             b.appendChild(frag); b.classList.add('active');
         } else b.classList.remove('active');
     }
-    startClock() { this.updateClockDate(); setInterval(() => this.updateClockDate(), 1000); }
+    startClock() { this.updateClockDate(); if(this._clockTimer) clearInterval(this._clockTimer); this._clockTimer = setInterval(() => this.updateClockDate(), 1000); }
     highlightSugg(items) {
         const inp = document.getElementById('search-input');
         items.forEach((el, i) => {
@@ -772,7 +783,7 @@ class NueTab {
         fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${q}&count=1&language=zh&format=json`)
             .then(r=>r.json()).then(d => {
                 if(d.results) { const c = d.results[0]; this.data.settings.weather = { city: c.name, lat: c.latitude, lon: c.longitude }; this.save(); this.getWeather(); } else alert('未找到');
-            });
+            }).catch(() => alert('网络错误，请重试'));
     }
     getWeather() {
         const { lat, lon, city } = this.data.settings.weather;
@@ -780,12 +791,12 @@ class NueTab {
         fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`)
             .then(r => r.json()).then(d => {
                 const el = document.getElementById('weather');
-                if(el) {
+                if(el && d.current_weather) {
                     const t = Math.round(d.current_weather.temperature); const c = d.current_weather.weathercode;
                     let i = '☀️'; if(c>3) i='☁️'; if(c>45) i='🌧️'; if(c>71) i='❄️';
-                    el.innerHTML = `${i} ${t}°C <span style="opacity:0.6;margin-left:5px">${city}</span>`;
+                    el.innerHTML = `${i} ${t}°C <span style="opacity:0.6;margin-left:5px">${escapeHtml(city)}</span>`;
                 }
-            });
+            }).catch(() => { const el = document.getElementById('weather'); if(el) el.innerHTML = '<span>天气获取失败</span>'; });
     }
 
     openEditModal(id) {
@@ -816,7 +827,7 @@ class NueTab {
         else locVal = 'main'; 
 
         const item = {
-            id: id || 's'+Date.now(),
+            id: id || 's'+uid(),
             name: document.getElementById('item-name').value,
             url: document.getElementById('item-url').value,
             icon: document.getElementById('item-icon').value,
@@ -838,8 +849,8 @@ class NueTab {
         const list = document.getElementById('cat-list-editor'); list.innerHTML = '';
         this.data.categories.forEach((c, idx) => {
             const d = document.createElement('div'); d.className = 'list-row';
-            let iconDisplay = c.icon.startsWith('<svg') ? c.icon : `<img src="${c.icon}">`;
-            d.innerHTML = `<div class="list-info">${iconDisplay} <span>${c.name}</span></div><div><button class="btn btn-secondary">编辑</button> <button class="btn btn-danger">×</button></div>`;
+            let iconDisplay = c.icon.startsWith('<svg') ? sanitizeSvg(c.icon) : `<img src="${escapeHtml(c.icon)}">`;
+            d.innerHTML = `<div class="list-info">${iconDisplay} <span>${escapeHtml(c.name)}</span></div><div><button class="btn btn-secondary">编辑</button> <button class="btn btn-danger">×</button></div>`;
             d.querySelector('.btn-secondary').onclick = () => this.openCatEdit(c.id);
             d.querySelector('.btn-danger').onclick = () => this.delCat(idx);
             list.appendChild(d);
@@ -858,7 +869,7 @@ class NueTab {
     saveCat() {
         const id = document.getElementById('cat-edit-id').value; const name = document.getElementById('cat-edit-name').value;
         const icon = document.getElementById('cat-edit-icon').value || '<svg viewBox="0 0 24 24" fill="#fff"><circle cx="12" cy="12" r="10"/></svg>';
-        if(id) { const idx = this.data.categories.findIndex(c=>c.id===id); if(idx > -1) this.data.categories[idx] = { id, name, icon }; } else { this.data.categories.push({ id: 'c'+Date.now(), name, icon }); }
+        if(id) { const idx = this.data.categories.findIndex(c=>c.id===id); if(idx > -1) this.data.categories[idx] = { id, name, icon }; } else { this.data.categories.push({ id: 'c'+uid(), name, icon }); }
         this.save(); document.getElementById('modal-cat-edit').classList.remove('active'); this.renderCatList(); document.getElementById('modal-cats').classList.add('active'); this.renderExtendedTabs();
     }
     delCat(i) { if(confirm('删除此分类?')) { this.data.categories.splice(i,1); this.save(); this.renderCatList(); this.renderExtendedTabs(); } }
@@ -872,15 +883,15 @@ class NueTab {
     }
     saveEngine() {
         const id = document.getElementById('eng-id').value;
-        const obj = { id: id || 'eng'+Date.now(), name: document.getElementById('eng-name').value, url: document.getElementById('eng-url').value, icon: document.getElementById('eng-icon').value };
-        if(id) { const i = this.data.engines.findIndex(x=>x.id===id); this.data.engines[i] = obj; } else this.data.engines.push(obj);
+        const obj = { id: id || 'eng'+uid(), name: document.getElementById('eng-name').value, url: document.getElementById('eng-url').value, icon: document.getElementById('eng-icon').value };
+        if(id) { const i = this.data.engines.findIndex(x=>x.id===id); if(i > -1) this.data.engines[i] = obj; else this.data.engines.push(obj); } else this.data.engines.push(obj);
         this.save(); this.bindSearchEvents(); document.getElementById('modal-engine').classList.remove('active'); this.renderEngineList();
     }
     renderEngineList() {
         const list = document.getElementById('engine-list-editor'); list.innerHTML = '';
         this.data.engines.forEach((e, idx) => {
             const div = document.createElement('div'); div.className = 'list-row';
-            div.innerHTML = `<div class="list-info"><img alt="" style="display:none"><span>${e.name}</span></div><div><button class="btn btn-secondary">编辑</button> <button class="btn btn-danger">×</button></div>`;
+            div.innerHTML = `<div class="list-info"><img alt="" style="display:none"><span>${escapeHtml(e.name)}</span></div><div><button class="btn btn-secondary">编辑</button> <button class="btn btn-danger">×</button></div>`;
             const img = div.querySelector('img'); let iconUrl = e.icon; if(!iconUrl) iconUrl = this.getIconUrl(e.url.split('?')[0]); if(iconUrl) assetManager.loadImg(img, iconUrl);
             div.querySelector('.btn-secondary').onclick = () => this.openEngineEdit(e.id);
             div.querySelector('.btn-danger').onclick = () => this.delEngine(idx);
