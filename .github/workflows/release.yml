@@ -1,0 +1,48 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create ZIP package
+        run: |
+          zip -r NueTab-${{ steps.get_version.VERSION }}.zip . \
+            -x ".git/*" \
+            -x ".github/*" \
+            -x "*.md" \
+            -x "sc.png" \
+            -x ".gitignore"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: NueTab ${{ steps.get_version.VERSION }}
+          body: |
+            ## NueTab ${{ steps.get_version.VERSION }}
+            
+            ### 安装方法
+            1. 下载 `NueTab-${{ steps.get_version.VERSION }}.zip`
+            2. 解压到任意文件夹
+            3. 打开 Chrome，访问 `chrome://extensions/`
+            4. 开启右上角"开发者模式"
+            5. 点击"加载已解压的扩展程序"，选择解压后的文件夹
+            
+            ### 更新内容
+            请查看 [Commits](https://github.com/wuko233/NueTab/commits/${{ steps.get_version.VERSION }})
+          files: NueTab-${{ steps.get_version.VERSION }}.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

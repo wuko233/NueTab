@@ -1,14 +1,21 @@
 {
   "manifest_version": 3,
   "name": "NueTab",
-  "version": "1.0",
+  "version": "1.1.1",
   "description": "高度可自定义的新标签页，支持历史与收藏夹管理",
   "permissions": [
     "storage",
     "history",
     "bookmarks",
-    "favicon"
+    "activeTab",
+    "tabs"
   ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "128": "icon.png"
+    }
+  },
   "host_permissions": [
     "https://sp0.baidu.com/*",
     "https://suggestion.baidu.com/*",
@@ -19,13 +26,26 @@
     "https://bing.biturl.top/*",
     "*://*/favicon.ico"
   ],
+  "background": {
+    "service_worker": "background.js",
+    "scripts": ["background.js"]
+  },
   "chrome_url_overrides": {
     "newtab": "nuetab.html"
+  },
+  "browser_url_overrides": {
+    "newtab": "nuetab.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "nuetab@wuko233",
+      "strict_min_version": "109.0"
+    }
   },
   "icons": {
     "128": "icon.png"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: https: chrome-extension-resource:; connect-src 'self' https: http:;"
+    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: https:; connect-src 'self' https:"
   }
 }

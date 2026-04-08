@@ -15,7 +15,7 @@ class AssetManager {
     }
     loadImg(imgEl, url, letterEl) {
         if (!url || !imgEl) return;
-        if (url.startsWith('chrome-extension://') || url.startsWith('chrome://')) {
+        if (url.startsWith('chrome-extension://') || url.startsWith('moz-extension://') || url.startsWith('chrome://')) {
             imgEl.src = url; imgEl.style.display = 'block';
             if(letterEl) letterEl.style.display = 'none';
             return;
@@ -76,13 +76,14 @@ const DEFAULT_DATA = {
 class NueTab {
     constructor() {
         this.loadData();
-        this.state = { 
-            catFilter: this.data.categories[0]?.id || 'all', 
-            dragSrc: null, 
+        this.state = {
+            catFilter: this.data.categories[0]?.id || 'all',
+            dragSrc: null,
             dragType: null,
-            widgetDragSrc: null, 
+            widgetDragSrc: null,
             sidebarOpen: false,
-            ctxData: null 
+            ctxData: null,
+            suggIndex: -1
         };
         try { this.init(); } catch (e) { console.error(e); }
     }
@@ -101,7 +102,7 @@ class NueTab {
         await this.applyTheme();
         this.setupEvents();
     }
-    save() { localStorage.setItem('nuetab_ult_data', JSON.stringify(this.data)); }
+    save() { localStorage.setItem('nuetab_ult_data', JSON.stringify(this.data)); if(typeof chrome!=='undefined'&&chrome.storage) chrome.storage.local.set({nuetab_ult_data: JSON.stringify(this.data)}); }
 
     getIconUrl(pageUrl) {
         if(!pageUrl || pageUrl.startsWith('ext://')) return null;
@@ -605,6 +606,21 @@ class NueTab {
         document.getElementById('btn-clear-cache').onclick = () => assetManager.clear();
         document.getElementById('btn-reset').onclick = () => { if(confirm('重置?')) { localStorage.removeItem('nuetab_ult_data'); location.reload(); }};
         document.getElementById('btn-export').onclick = () => { const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(this.data)],{type:'application/json'})); a.download='backup.json'; a.click(); };
+        document.getElementById('btn-import').onclick = () => document.getElementById('import-file').click();
+        document.getElementById('import-file').onchange = (e) => {
+            const file = e.target.files[0]; if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const imported = JSON.parse(ev.target.result);
+                    if(!imported.settings || !imported.shortcuts) { alert('无效的配置文件'); return; }
+                    this.data = imported;
+                    this.save(); location.reload();
+                } catch(err) { alert('配置文件解析失败'); }
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        };
 
         /* -----------------------------------------------------
            FIXED SEARCH SUGGESTIONS: Extract only the 's' array
@@ -647,9 +663,31 @@ class NueTab {
                 }, 200);
             });
             inp.addEventListener('keydown', e => {
-                if(e.key === 'Enter') {
-                    const eng = this.data.engines.find(x => x.id === this.data.settings.currEngine);
-                    window.open(eng.url.replace('%s', encodeURIComponent(inp.value)), this.data.settings.linkTarget || '_self');
+                const box = document.getElementById('suggestions-box');
+                const items = box ? box.querySelectorAll('.suggestion-item') : [];
+                if(e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if(!items.length) return;
+                    if(this.state.suggIndex === -1) this.state._origInput = inp.value;
+                    this.state.suggIndex = Math.min(this.state.suggIndex + 1, items.length - 1);
+                    this.highlightSugg(items);
+                } else if(e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if(!items.length) return;
+                    this.state.suggIndex = Math.max(this.state.suggIndex - 1, -1);
+                    this.highlightSugg(items);
+                } else if(e.key === 'Enter') {
+                    if(this.state.suggIndex >= 0 && items[this.state.suggIndex]) {
+                        items[this.state.suggIndex].click();
+                    } else {
+                        const eng = this.data.engines.find(x => x.id === this.data.settings.currEngine);
+                        window.open(eng.url.replace('%s', encodeURIComponent(inp.value)), this.data.settings.linkTarget || '_self');
+                    }
+                    box?.classList.remove('active');
+                    this.state.suggIndex = -1;
+                } else if(e.key === 'Escape') {
+                    box?.classList.remove('active');
+                    this.state.suggIndex = -1;
                 }
             });
         }
@@ -677,7 +715,7 @@ class NueTab {
     bindSearchEvents() {
         const btn = document.getElementById('engine-select-btn');
         if(btn) {
-            btn.onclick = (e) => { e.stopPropagation(); document.getElementById('engine-drop').classList.toggle('show'); };
+            btn.onclick = (e) => { e.stopPropagation(); document.getElementById('suggestions-box')?.classList.remove('active'); document.getElementById('engine-drop').classList.toggle('show'); };
             btn.oncontextmenu = (e) => { e.preventDefault(); this.openEngineEdit(this.data.settings.currEngine); };
         }
         document.addEventListener('click', e => {
@@ -704,6 +742,7 @@ class NueTab {
     }
     sugg(d) {
         const b = document.getElementById('suggestions-box'); if(!b) return; b.innerHTML = '';
+        this.state.suggIndex = -1;
         if(d.s && d.s.length) {
             const frag = document.createDocumentFragment();
             d.s.slice(0,6).forEach(t => {
@@ -715,6 +754,18 @@ class NueTab {
         } else b.classList.remove('active');
     }
     startClock() { this.updateClockDate(); setInterval(() => this.updateClockDate(), 1000); }
+    highlightSugg(items) {
+        const inp = document.getElementById('search-input');
+        items.forEach((el, i) => {
+            if(i === this.state.suggIndex) {
+                el.style.background = 'var(--accent-color)'; el.style.color = '#000';
+                if(inp) inp.value = el.innerText;
+            } else {
+                el.style.background = ''; el.style.color = '';
+            }
+        });
+        if(this.state.suggIndex === -1 && inp) inp.value = this.state._origInput || '';
+    }
     toggleLayoutEdit(enabled) { document.body.classList.toggle('layout-editing', enabled); document.querySelectorAll('.widget-block').forEach(el => el.draggable = enabled); }
     searchCity() {
         const q = document.getElementById('city-search').value; if(!q) return;
@@ -840,3 +891,36 @@ class NueTab {
 }
 
 window.app = new NueTab();
+
+// 监听来自 background 的消息
+if (typeof chrome !== 'undefined' && chrome.runtime) {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'addShortcut') {
+      const newItem = message.shortcut;
+      // 检查是否已存在
+      const exists = window.app.data.shortcuts.some(s => s.url === newItem.url);
+      if (!exists) {
+        newItem.cat = window.app.data.categories[0]?.id || 'c_sys';
+        window.app.data.shortcuts.push(newItem);
+        window.app.save();
+        window.app.renderShortcuts();
+        window.app.renderExtendedList();
+        sendResponse({ success: true });
+      } else {
+        sendResponse({ success: false, message: '已存在' });
+      }
+    }
+    return true;
+  });
+  
+  // 从 chrome.storage 加载数据（如果有）
+  chrome.storage.local.get(['nuetab_ult_data'], (result) => {
+    if (result.nuetab_ult_data && !localStorage.getItem('nuetab_ult_data')) {
+      localStorage.setItem('nuetab_ult_data', result.nuetab_ult_data);
+      if (window.app) {
+        window.app.loadData();
+        window.app.renderShortcuts();
+      }
+    }
+  });
+}

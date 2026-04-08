@@ -214,8 +214,12 @@
                         </div>
                         <button class="btn btn-secondary" style="width:100%; margin-bottom:20px" id="btn-clear-cache">清理缓存</button>
                         <div style="display:flex; gap:10px;">
+                            <button class="btn btn-secondary" style="flex:1" id="btn-import">导入配置</button>
+                            <input type="file" id="import-file" accept=".json" style="display:none">
                             <button class="btn btn-secondary" style="flex:1" id="btn-export">导出配置</button>
-                            <button class="btn btn-danger" style="flex:1" id="btn-reset">完全重置</button>
+                        </div>
+                        <div style="margin-top:10px;">
+                            <button class="btn btn-danger" style="width:100%" id="btn-reset">完全重置</button>
                         </div>
                     </div>
                     <!-- 关于 -->
