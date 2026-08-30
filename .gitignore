@@ -1,0 +1,4 @@
+dist/
+captures/
+.claude/settings.local.json
+*.zip

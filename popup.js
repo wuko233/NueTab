@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 创建快捷方式对象
     const newItem = {
-      id: 's' + Date.now(),
+      id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       name: title,
       url: url,
       loc: location,

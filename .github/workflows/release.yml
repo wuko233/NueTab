@@ -21,9 +21,14 @@ jobs:
           zip -r NueTab-${{ steps.get_version.VERSION }}.zip . \
             -x ".git/*" \
             -x ".github/*" \
+            -x ".claude/*" \
+            -x ".gitignore" \
+            -x "captures/*" \
+            -x "dist/*" \
             -x "*.md" \
             -x "sc.png" \
-            -x ".gitignore"
+            -x "icon-orig.png" \
+            -x "LICENSE"
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

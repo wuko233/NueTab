@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NueTab",
-  "version": "1.1.1",
+  "version": "1.2.1",
   "description": "高度可自定义的新标签页，支持历史与收藏夹管理",
   "permissions": [
     "storage",
@@ -13,18 +13,22 @@
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "128": "icon.png"
+      "16": "icon-16.png",
+      "48": "icon-48.png",
+      "128": "icon-128.png"
     }
   },
   "host_permissions": [
     "https://sp0.baidu.com/*",
     "https://suggestion.baidu.com/*",
+    "https://www.baidu.com/*",
+    "https://suggestqueries.google.com/*",
+    "https://api.bing.com/*",
     "https://www.google.com/s2/favicons/*",
     "https://icons.duckduckgo.com/*",
     "https://api.open-meteo.com/*",
     "https://geocoding-api.open-meteo.com/*",
-    "https://bing.biturl.top/*",
-    "*://*/favicon.ico"
+    "https://bing.biturl.top/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -39,13 +43,19 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "nuetab@wuko233",
-      "strict_min_version": "109.0"
-    }
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    },
+    "gecko_android": {}
   },
   "icons": {
-    "128": "icon.png"
+    "16": "icon-16.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: https:; connect-src 'self' https:"
+    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: https:; connect-src 'self' https://www.baidu.com https://suggestqueries.google.com https://api.bing.com https://api.open-meteo.com https://geocoding-api.open-meteo.com https://bing.biturl.top"
   }
 }
