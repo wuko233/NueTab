@@ -1,17 +1,40 @@
+function escapeHtml(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+function sanitizeSvg(svg) {
+    if (typeof svg !== 'string' || !svg.trim().startsWith('<svg')) return '';
+    const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+    const root = doc.documentElement;
+    if (!root || root.nodeName.toLowerCase() !== 'svg') return '';
+    const allowedTags = new Set(['svg', 'g', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse', 'title']);
+    const allowedAttrs = new Set(['viewbox', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'fill-rule', 'clip-rule', 'd', 'cx', 'cy', 'r', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'width', 'height', 'transform', 'opacity', 'points', 'rx', 'ry', 'xmlns']);
+    const isSafeAttr = (name, value) => allowedAttrs.has(name.toLowerCase()) && !/javascript:|expression\s*\(/i.test(value);
+    Array.from(root.attributes).forEach(a => { if (!isSafeAttr(a.name, a.value)) root.removeAttribute(a.name); });
+    const clean = (node) => {
+        Array.from(node.children).forEach(child => {
+            if (!allowedTags.has(child.nodeName.toLowerCase())) { child.remove(); return; }
+            Array.from(child.attributes).forEach(a => { if (!isSafeAttr(a.name, a.value)) child.removeAttribute(a.name); });
+            clean(child);
+        });
+    };
+    clean(root);
+    return new XMLSerializer().serializeToString(root);
+}
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
 /**
  * 资产管理器
  */
 class AssetManager {
     constructor() {
         this.dbName = 'NueTabDB'; this.storeName = 'assets'; this.db = null;
-        this.init();
+        this._ready = this.init();
     }
     async init() {
-        try {
+        return new Promise((resolve) => {
             const req = indexedDB.open(this.dbName, 1);
             req.onupgradeneeded = e => { if(!e.target.result.objectStoreNames.contains(this.storeName)) e.target.result.createObjectStore(this.storeName); };
-            req.onsuccess = e => { this.db = e.target.result; };
-        } catch(e) {}
+            req.onsuccess = e => { this.db = e.target.result; resolve(); };
+            req.onerror = () => resolve();
+        });
     }
     loadImg(imgEl, url, letterEl) {
         if (!url || !imgEl) return;
@@ -87,22 +110,81 @@ class NueTab {
         };
         try { this.init(); } catch (e) { console.error(e); }
     }
+    normalizeData(data) {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+        const d = { settings: {}, engines: [], categories: [], shortcuts: [] };
+        d._savedAt = typeof data._savedAt === 'number' ? data._savedAt : 0;
+        d.settings = (data.settings && typeof data.settings === 'object' && !Array.isArray(data.settings)) ? data.settings : {};
+        const def = DEFAULT_DATA.settings;
+        for (const k in def) if (d.settings[k] === undefined) d.settings[k] = def[k];
+        const cleanIcon = (icon) => (typeof icon === 'string' && icon.startsWith('<svg')) ? sanitizeSvg(icon) : (typeof icon === 'string' ? icon : '');
+        d.engines = (Array.isArray(data.engines) ? data.engines : DEFAULT_DATA.engines)
+            .filter(e => e && typeof e.url === 'string' && e.url && typeof e.name === 'string')
+            .map((e, i) => ({ id: (typeof e.id === 'string' && e.id) ? e.id : 'eng' + uid() + i, name: e.name, url: e.url, icon: cleanIcon(e.icon) }));
+        if (!d.engines.length) d.engines = JSON.parse(JSON.stringify(DEFAULT_DATA.engines));
+        d.categories = (Array.isArray(data.categories) ? data.categories : DEFAULT_DATA.categories)
+            .filter(c => c && typeof c.name === 'string' && c.name)
+            .map((c, i) => ({ id: (typeof c.id === 'string' && c.id) ? c.id : 'c' + uid() + i, name: c.name, icon: cleanIcon(c.icon) || DEFAULT_DATA.categories[0].icon }));
+        if (!d.categories.length) d.categories = JSON.parse(JSON.stringify(DEFAULT_DATA.categories));
+        d.shortcuts = (Array.isArray(data.shortcuts) ? data.shortcuts : [])
+            .filter(s => s && typeof s.url === 'string' && s.url)
+            .map((s, i) => {
+                let loc = ['main', 'extended', 'both'].includes(s.loc) ? s.loc : 'main';
+                if (s.url === 'ext://history' || s.url === 'ext://bookmarks') loc = 'main';
+                return {
+                    id: (typeof s.id === 'string' && s.id) ? s.id : 's' + uid() + i,
+                    name: (typeof s.name === 'string' && s.name) ? s.name : s.url,
+                    url: s.url,
+                    icon: cleanIcon(s.icon),
+                    iconColor: (typeof s.iconColor === 'string') ? s.iconColor : '',
+                    svgSize: Number(s.svgSize) || 60,
+                    cat: d.categories.some(c => c.id === s.cat) ? s.cat : d.categories[0].id,
+                    loc
+                };
+            });
+        return d;
+    }
     loadData() {
+        let loaded = null;
         try {
             const raw = localStorage.getItem('nuetab_ult_data');
-            if (raw) {
-                this.data = JSON.parse(raw);
-                const def = DEFAULT_DATA.settings;
-                for(let k in def) if(this.data.settings[k] === undefined) this.data.settings[k] = def[k];
-            } else { this.data = JSON.parse(JSON.stringify(DEFAULT_DATA)); }
-        } catch (e) { this.data = JSON.parse(JSON.stringify(DEFAULT_DATA)); }
+            if (raw) loaded = JSON.parse(raw);
+        } catch (e) { loaded = null; }
+        this.data = this.normalizeData(loaded) || JSON.parse(JSON.stringify(DEFAULT_DATA));
     }
     async init() {
         this.renderLayout();
         await this.applyTheme();
         this.setupEvents();
+        this.syncFromStorage();
     }
-    save() { localStorage.setItem('nuetab_ult_data', JSON.stringify(this.data)); if(typeof chrome!=='undefined'&&chrome.storage) chrome.storage.local.set({nuetab_ult_data: JSON.stringify(this.data)}); }
+    save() { this.data._savedAt = Date.now(); const json = JSON.stringify(this.data); localStorage.setItem('nuetab_ult_data', json); if(typeof chrome!=='undefined'&&chrome.storage) chrome.storage.local.set({nuetab_ult_data: json}); }
+    // 从 chrome.storage 同步数据：popup 添加的快捷方式由 background 写入 storage，
+    // 若 storage 中数据更新（时间戳更大）则采用，避免 localStorage 为空时丢失数据
+    syncFromStorage() {
+        if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+        chrome.storage.local.get(['nuetab_ult_data'], (result) => {
+            try {
+                if (!result || !result.nuetab_ult_data) {
+                    // storage 为空：将当前本地数据写入，作为 popup 添加的数据源
+                    if (this.data._savedAt) this.save();
+                    return;
+                }
+                const stored = JSON.parse(result.nuetab_ult_data);
+                const storedTs = (stored && typeof stored._savedAt === 'number') ? stored._savedAt : 0;
+                if (storedTs > (this.data._savedAt || 0)) {
+                    const merged = this.normalizeData(stored);
+                    if (merged) {
+                        merged._savedAt = storedTs;
+                        this.data = merged;
+                        if (!this.data.categories.some(c => c.id === this.state.catFilter)) this.state.catFilter = this.data.categories[0].id;
+                        this.renderLayout();
+                        this.applyTheme();
+                    }
+                }
+            } catch (e) { console.error('sync storage failed:', e); }
+        });
+    }
 
     getIconUrl(pageUrl) {
         if(!pageUrl || pageUrl.startsWith('ext://')) return null;
@@ -144,7 +226,7 @@ class NueTab {
                                 <img id="curr-engine-icon" src="" onerror="this.style.display='none'">
                                 <div class="engine-dropdown" id="engine-drop"></div>
                             </div>
-                            <input type="text" class="search-input" id="search-input" placeholder="Search..." autocomplete="off">
+                            <input type="text" class="search-input" id="search-input" placeholder="搜索..." autocomplete="off">
                         </div>
                         <div class="suggestions-box" id="suggestions-box"></div>
                     </div>`;
@@ -184,14 +266,14 @@ class NueTab {
             el.className = 'shortcut-item'; el.draggable = true; el.dataset.id = item.id;
             let iconHtml = '';
             if (item.icon && item.icon.startsWith('<svg')) {
-                let svgContent = item.icon;
+                let svgContent = sanitizeSvg(item.icon);
                 if(item.iconColor) svgContent = svgContent.replace('<svg', `<svg style="fill:${item.iconColor}; stroke:${item.iconColor}"`);
                 iconHtml = `<div class="icon-box">${svgContent}</div>`;
             } else {
                 const letter = item.name ? item.name[0].toUpperCase() : '?';
-                iconHtml = `<div class="icon-box"><div class="icon-letter">${letter}</div><img alt="" /></div>`;
+                iconHtml = `<div class="icon-box"><div class="icon-letter">${escapeHtml(letter)}</div><img alt="" /></div>`;
             }
-            el.innerHTML = `${iconHtml}<div class="item-title">${item.name}</div>`;
+            el.innerHTML = `${iconHtml}<div class="item-title">${escapeHtml(item.name)}</div>`;
             const svgEl = el.querySelector('svg');
             if(svgEl) {
                 const size = item.svgSize || 60; 
@@ -251,8 +333,8 @@ class NueTab {
             const btn = document.createElement('div');
             btn.className = `cat-btn ${this.state.catFilter === cat.id ? 'active' : ''}`;
             btn.draggable = true;
-            let iconHtml = cat.icon.startsWith('<svg') ? cat.icon : `<img src="${cat.icon || ''}" onerror="this.style.display='none'">`;
-            btn.innerHTML = `${iconHtml} <span>${cat.name}</span>`;
+            let iconHtml = cat.icon.startsWith('<svg') ? sanitizeSvg(cat.icon) : `<img src="${escapeHtml(cat.icon || '')}" onerror="this.style.display='none'">`;
+            btn.innerHTML = `${iconHtml} <span>${escapeHtml(cat.name)}</span>`;
             btn.onclick = () => { this.state.catFilter = cat.id; this.renderExtendedTabs(); this.renderExtendedList(); };
             btn.oncontextmenu = (e) => { e.preventDefault(); this.openCatEdit(cat.id); };
             btn.addEventListener('dragstart', (e) => { e.stopPropagation(); this.state.dragType = 'cat'; this.state.dragSrc = idx; });
@@ -310,9 +392,9 @@ class NueTab {
             a.onclick = () => this.handleShortcutClick(item);
             let iconHtml = `<img alt="" style="display:none">`;
             if(item.icon && item.icon.startsWith('<svg')) {
-                let svg = item.icon; if(item.iconColor) svg = svg.replace('<svg', `<svg style="fill:${item.iconColor}"`); iconHtml = svg;
+                let svg = sanitizeSvg(item.icon); if(item.iconColor) svg = svg.replace('<svg', `<svg style="fill:${item.iconColor}"`); iconHtml = svg;
             }
-            a.innerHTML = `${iconHtml} <span>${item.name}</span>`;
+            a.innerHTML = `${iconHtml} <span>${escapeHtml(item.name)}</span>`;
             if(!item.icon || !item.icon.startsWith('<svg')) {
                 const img = a.querySelector('img'); const url = item.icon || this.getIconUrl(item.url);
                 if(url) assetManager.loadImg(img, url);
@@ -387,7 +469,7 @@ class NueTab {
                         if(!child.url) { 
                             const div = document.createElement('div');
                             div.className = 'nav-item'; div.style.paddingLeft = (20 + depth * 15) + 'px';
-                            div.innerHTML = `<svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg> ${child.title}`;
+                            div.innerHTML = `<svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg> ${escapeHtml(child.title)}`;
                             div.onclick = () => { document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); div.classList.add('active'); this.loadBookmarksContent(child.id); };
                             navList.appendChild(div);
                         }
@@ -414,7 +496,7 @@ class NueTab {
         const data = this.state.ctxData;
         if(!data || !data.url) return;
         const newItem = {
-            id: 's' + Date.now(),
+            id: 's' + uid(),
             name: data.title,
             url: data.url,
             loc: targetLoc, 
@@ -450,7 +532,9 @@ class NueTab {
                     row.onclick = () => this.openLink(h.url);
                     row.oncontextmenu = (e) => this.openSidebarCtx(e, { type: 'history', url: h.url, title: h.title });
                     const time = new Date(h.lastVisitTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-                    row.innerHTML = `<div class="list-item-icon"><img alt="" /></div><div class="list-item-content"><div class="list-item-title">${h.title || h.url}</div><div class="list-item-meta">${new URL(h.url).hostname} • ${time}</div></div>`;
+                    let hostname = '';
+                    try { hostname = new URL(h.url).hostname; } catch(e) { hostname = h.url; }
+                    row.innerHTML = `<div class="list-item-icon"><img alt="" /></div><div class="list-item-content"><div class="list-item-title">${escapeHtml(h.title || h.url)}</div><div class="list-item-meta">${escapeHtml(hostname)} • ${time}</div></div>`;
                     const icon = this.getIconUrl(h.url);
                     if(icon) assetManager.loadImg(row.querySelector('img'), icon);
                     list.appendChild(row);
@@ -471,13 +555,13 @@ class NueTab {
                 node.children.forEach(bm => {
                     const row = document.createElement('div'); row.className = 'list-item-row';
                     if(bm.url) {
-                        row.innerHTML = `<div class="list-item-icon"><img alt=""></div><div class="list-item-content"><div class="list-item-title">${bm.title}</div><div class="list-item-meta">${bm.url}</div></div>`;
+                        row.innerHTML = `<div class="list-item-icon"><img alt=""></div><div class="list-item-content"><div class="list-item-title">${escapeHtml(bm.title)}</div><div class="list-item-meta">${escapeHtml(bm.url)}</div></div>`;
                         const icon = this.getIconUrl(bm.url);
                         if(icon) assetManager.loadImg(row.querySelector('img'), icon);
                         row.onclick = () => this.openLink(bm.url);
                         row.oncontextmenu = (e) => this.openSidebarCtx(e, { type: 'bookmark', id: bm.id, url: bm.url, title: bm.title, parentId: folderId });
                     } else {
-                        row.innerHTML = `<div class="list-item-icon"><svg viewBox="0 0 24 24" style="fill:#ffd700"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></div><div class="list-item-content"><div class="list-item-title">${bm.title}</div><div class="list-item-meta">文件夹</div></div>`;
+                        row.innerHTML = `<div class="list-item-icon"><svg viewBox="0 0 24 24" style="fill:#ffd700"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></div><div class="list-item-content"><div class="list-item-title">${escapeHtml(bm.title)}</div><div class="list-item-meta">文件夹</div></div>`;
                         row.onclick = () => this.loadBookmarksContent(bm.id);
                         row.oncontextmenu = (e) => e.preventDefault(); 
                     }
@@ -531,12 +615,13 @@ class NueTab {
         const sugToggle = document.getElementById('search-sug'); if(sugToggle) sugToggle.checked = s.searchSuggestions;
         const weatherToggle = document.getElementById('weather-show-toggle'); if(weatherToggle) weatherToggle.checked = s.showWeather !== false;
 
-        ['col-time','col-date','col-weather'].forEach(k => { const el = document.getElementById(k); if(el) el.value = s[k.replace('col-','').replace(/(\w)/,(a)=>a.toUpperCase())+'Color']; });
+        const colorMap = {'col-time': 'timeColor', 'col-date': 'dateColor', 'col-weather': 'weatherColor'};
+        Object.entries(colorMap).forEach(([id, prop]) => { const el = document.getElementById(id); if(el) el.value = s[prop] || ''; });
         const bg = document.getElementById('bg-layer'); const vid = document.getElementById('video-bg');
         if(bg && vid) {
             vid.style.display = 'none'; bg.style.backgroundImage = 'none'; bg.style.background = '#050505'; bg.style.backgroundSize = s.bgFit === 'repeat' ? 'auto' : s.bgFit;
             if(s.bgType === 'color') bg.style.background = s.bgValue || '#111';
-            else if(s.bgType === 'image' && s.bgValue) bg.style.backgroundImage = `url('${s.bgValue}')`;
+            else if(s.bgType === 'image' && s.bgValue) bg.style.backgroundImage = `url("${s.bgValue.replace(/"/g, '\\"')}")`;
             else if(s.bgType === 'bing') bg.style.backgroundImage = `url('https://bing.biturl.top/?resolution=1920&format=image&index=0&mkt=zh-CN')`;
             else if(s.bgType === 'video' && s.bgValue) { vid.src = s.bgValue; vid.style.display = 'block'; }
         }
@@ -553,14 +638,17 @@ class NueTab {
             if(e.target.classList.contains('modal')) e.target.classList.remove('active');
             if(e.target.id === 'sidebar-overlay') this.closeSidebar();
             if(!e.target.closest('.ctx-menu') && !e.target.closest('.list-item-row')) document.getElementById('sidebar-ctx-menu').classList.remove('active');
+            if(!e.target.closest('.engine-select')) document.getElementById('engine-drop')?.classList.remove('show');
+            if(!e.target.closest('.search-container')) document.getElementById('suggestions-box')?.classList.remove('active');
         };
-        window.onclick = closeModals;
+        window.addEventListener('click', closeModals);
         document.getElementById('close-settings').onclick = () => document.getElementById('modal-settings').classList.remove('active');
         document.getElementById('close-sidebar').onclick = () => this.closeSidebar();
         document.querySelectorAll('.sidebar-item').forEach(item => { item.onclick = () => { const tabId = item.dataset.tab; this.openSettingsTab(tabId); }; });
 
         const bind = (id, prop) => { const el = document.getElementById(id); if(el) el.onchange = (e) => this.updateSetting(prop, e.target.value); };
-        const bindInput = (id, prop) => { const el = document.getElementById(id); if(el) el.oninput = (e) => this.updateSetting(prop, e.target.value); };
+        let _debounce = null;
+        const bindInput = (id, prop) => { const el = document.getElementById(id); if(el) el.oninput = (e) => { const v = e.target.value; clearTimeout(_debounce); _debounce = setTimeout(() => this.updateSetting(prop, v), 150); } };
         
         bind('link-target', 'linkTarget'); bind('nav-mode', 'navMode'); bind('header-align', 'headerAlign');
         bind('bg-type', 'bgType'); bind('bg-fit', 'bgFit'); bindInput('bg-blur', 'bgBlur');
@@ -596,6 +684,10 @@ class NueTab {
         const bgF = document.getElementById('bg-file'); if(bgF) bgF.onchange = () => handleUpload('bg-file', 'bg-value', true);
         const upIc = document.getElementById('btn-upload-icon'); if(upIc) upIc.onclick = () => document.getElementById('icon-file').click();
         const icF = document.getElementById('icon-file'); if(icF) icF.onchange = () => handleUpload('icon-file', 'item-icon', false);
+        const upEngIc = document.getElementById('btn-upload-eng-icon'); if(upEngIc) upEngIc.onclick = () => document.getElementById('eng-file').click();
+        const engF = document.getElementById('eng-file'); if(engF) engF.onchange = () => handleUpload('eng-file', 'eng-icon', false);
+        const upCatIc = document.getElementById('btn-upload-cat-icon'); if(upCatIc) upCatIc.onclick = () => document.getElementById('cat-file').click();
+        const catF = document.getElementById('cat-file'); if(catF) catF.onchange = () => handleUpload('cat-file', 'cat-edit-icon', false);
 
         document.getElementById('btn-close-shortcut').onclick = () => document.getElementById('modal-shortcut').classList.remove('active');
         document.getElementById('btn-save-shortcut').onclick = () => this.saveShortcut();
@@ -613,8 +705,9 @@ class NueTab {
             reader.onload = (ev) => {
                 try {
                     const imported = JSON.parse(ev.target.result);
-                    if(!imported.settings || !imported.shortcuts) { alert('无效的配置文件'); return; }
-                    this.data = imported;
+                    const data = this.normalizeData(imported);
+                    if (!data || !Array.isArray(data.shortcuts)) { alert('无效的配置文件'); return; }
+                    this.data = data;
                     this.save(); location.reload();
                 } catch(err) { alert('配置文件解析失败'); }
             };
@@ -634,32 +727,11 @@ class NueTab {
                 timer = setTimeout(() => {
                     const val = inp.value;
                     if(!val) return document.getElementById('suggestions-box').classList.remove('active');
-                    
-                    fetch(`https://www.baidu.com/sugrec?prod=pc&wd=${encodeURIComponent(val)}&cb=callback`, {
-                        headers: {
-                            'Accept': 'application/json, text/javascript, */*; q=0.01',
-                            'Content-Type': 'application/json; charset=utf-8'
-                        }
-                    })
-                    .then(r => r.text())
-                    .then(text => {
-                        try {
-                            // 处理JSONP响应
-                            const jsonMatch = text.match(/callback\((\{.*\})\)/);
-                            if(jsonMatch) {
-                                const data = JSON.parse(jsonMatch[1]);
-                                if(data.g && Array.isArray(data.g)) {
-                                    const suggestions = data.g.map(item => item.q);
-                                    this.sugg({ s: suggestions });
-                                }
-                            }
-                        } catch(e) {
-                            console.error('解析失败:', e);
-                        }
-                    })
-                    .catch(err => {
-                        console.error('请求失败:', err);
-                    });
+                    const curr = this.data.engines.find(x => x.id === this.data.settings.currEngine);
+                    const engineId = curr ? curr.id : (this.data.engines[0]?.id || 'baidu');
+                    this.fetchSuggestions(engineId, val)
+                        .then(list => { if (list && list.length) this.sugg({ s: list }); })
+                        .catch(() => {});
                 }, 200);
             });
             inp.addEventListener('keydown', e => {
@@ -718,10 +790,6 @@ class NueTab {
             btn.onclick = (e) => { e.stopPropagation(); document.getElementById('suggestions-box')?.classList.remove('active'); document.getElementById('engine-drop').classList.toggle('show'); };
             btn.oncontextmenu = (e) => { e.preventDefault(); this.openEngineEdit(this.data.settings.currEngine); };
         }
-        document.addEventListener('click', e => {
-            if(!e.target.closest('.engine-select')) document.getElementById('engine-drop')?.classList.remove('show');
-            if(!e.target.closest('.search-container')) document.getElementById('suggestions-box')?.classList.remove('active');
-        });
         this.updateEngineIcon(); this.renderEngineDrop();
     }
     updateEngineIcon() {
@@ -733,12 +801,33 @@ class NueTab {
         const drop = document.getElementById('engine-drop'); if(!drop) return; drop.innerHTML = '';
         this.data.engines.forEach(eng => {
             const div = document.createElement('div'); div.className = 'engine-item';
-            div.innerHTML = `<img alt="" style="display:none"> ${eng.name}`;
+            div.innerHTML = `<img alt="" style="display:none"> ${escapeHtml(eng.name)}`;
             const img = div.querySelector('img'); let iconUrl = eng.icon; if(!iconUrl) iconUrl = this.getIconUrl(eng.url.split('?')[0]); if(iconUrl) assetManager.loadImg(img, iconUrl);
             div.onclick = (e) => { e.stopPropagation(); this.data.settings.currEngine = eng.id; this.save(); this.updateEngineIcon(); drop.classList.remove('show'); };
             div.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); this.openEngineEdit(eng.id); };
             drop.appendChild(div);
         });
+    }
+    async fetchSuggestions(engineId, val) {
+        const q = encodeURIComponent(val);
+        if (engineId === 'google') {
+            const res = await fetch(`https://suggestqueries.google.com/complete/search?client=firefox&q=${q}`);
+            const data = await res.json();
+            return (Array.isArray(data) && Array.isArray(data[1])) ? data[1] : [];
+        }
+        if (engineId === 'bing') {
+            const res = await fetch(`https://api.bing.com/osjson.aspx?query=${q}`);
+            const data = await res.json();
+            return (Array.isArray(data) && Array.isArray(data[1])) ? data[1] : [];
+        }
+        const res = await fetch(`https://www.baidu.com/sugrec?prod=pc&wd=${q}&cb=callback`, {
+            headers: { 'Accept': 'application/json, text/javascript, */*; q=0.01' }
+        });
+        const text = await res.text();
+        const m = text.match(/callback\((\{[\s\S]*\})\)/);
+        if (!m) return [];
+        const data = JSON.parse(m[1]);
+        return (data.g && Array.isArray(data.g)) ? data.g.map(item => item.q) : [];
     }
     sugg(d) {
         const b = document.getElementById('suggestions-box'); if(!b) return; b.innerHTML = '';
@@ -753,7 +842,16 @@ class NueTab {
             b.appendChild(frag); b.classList.add('active');
         } else b.classList.remove('active');
     }
-    startClock() { this.updateClockDate(); setInterval(() => this.updateClockDate(), 1000); }
+    startClock() {
+        this.updateClockDate();
+        if (this._clockTimer) clearTimeout(this._clockTimer);
+        const schedule = () => {
+            const now = new Date();
+            const delay = 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()) + 100;
+            this._clockTimer = setTimeout(() => { this.updateClockDate(); schedule(); }, delay);
+        };
+        schedule();
+    }
     highlightSugg(items) {
         const inp = document.getElementById('search-input');
         items.forEach((el, i) => {
@@ -772,7 +870,7 @@ class NueTab {
         fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${q}&count=1&language=zh&format=json`)
             .then(r=>r.json()).then(d => {
                 if(d.results) { const c = d.results[0]; this.data.settings.weather = { city: c.name, lat: c.latitude, lon: c.longitude }; this.save(); this.getWeather(); } else alert('未找到');
-            });
+            }).catch(() => alert('网络错误，请重试'));
     }
     getWeather() {
         const { lat, lon, city } = this.data.settings.weather;
@@ -780,18 +878,18 @@ class NueTab {
         fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`)
             .then(r => r.json()).then(d => {
                 const el = document.getElementById('weather');
-                if(el) {
+                if(el && d.current_weather) {
                     const t = Math.round(d.current_weather.temperature); const c = d.current_weather.weathercode;
                     let i = '☀️'; if(c>3) i='☁️'; if(c>45) i='🌧️'; if(c>71) i='❄️';
-                    el.innerHTML = `${i} ${t}°C <span style="opacity:0.6;margin-left:5px">${city}</span>`;
+                    el.innerHTML = `${i} ${t}°C <span style="opacity:0.6;margin-left:5px">${escapeHtml(city)}</span>`;
                 }
-            });
+            }).catch(() => { const el = document.getElementById('weather'); if(el) el.innerHTML = '<span>天气获取失败</span>'; });
     }
 
     openEditModal(id) {
         const item = this.data.shortcuts.find(i=>i.id===id);
-        const cats = document.getElementById('item-cat'); cats.innerHTML = ''; 
-        this.data.categories.forEach(c => cats.innerHTML += `<option value="${c.id}">${c.name}</option>`);
+        const cats = document.getElementById('item-cat'); cats.innerHTML = '';
+        this.data.categories.forEach(c => { const opt = document.createElement('option'); opt.value = c.id; opt.textContent = c.name; cats.appendChild(opt); });
         document.getElementById('edit-id').value = item ? item.id : '';
         document.getElementById('item-name').value = item ? item.name : '';
         document.getElementById('item-url').value = item ? item.url : '';
@@ -816,7 +914,7 @@ class NueTab {
         else locVal = 'main'; 
 
         const item = {
-            id: id || 's'+Date.now(),
+            id: id || 's'+uid(),
             name: document.getElementById('item-name').value,
             url: document.getElementById('item-url').value,
             icon: document.getElementById('item-icon').value,
@@ -838,8 +936,8 @@ class NueTab {
         const list = document.getElementById('cat-list-editor'); list.innerHTML = '';
         this.data.categories.forEach((c, idx) => {
             const d = document.createElement('div'); d.className = 'list-row';
-            let iconDisplay = c.icon.startsWith('<svg') ? c.icon : `<img src="${c.icon}">`;
-            d.innerHTML = `<div class="list-info">${iconDisplay} <span>${c.name}</span></div><div><button class="btn btn-secondary">编辑</button> <button class="btn btn-danger">×</button></div>`;
+            let iconDisplay = c.icon.startsWith('<svg') ? sanitizeSvg(c.icon) : `<img src="${escapeHtml(c.icon)}">`;
+            d.innerHTML = `<div class="list-info">${iconDisplay} <span>${escapeHtml(c.name)}</span></div><div><button class="btn btn-secondary">编辑</button> <button class="btn btn-danger">×</button></div>`;
             d.querySelector('.btn-secondary').onclick = () => this.openCatEdit(c.id);
             d.querySelector('.btn-danger').onclick = () => this.delCat(idx);
             list.appendChild(d);
@@ -858,10 +956,21 @@ class NueTab {
     saveCat() {
         const id = document.getElementById('cat-edit-id').value; const name = document.getElementById('cat-edit-name').value;
         const icon = document.getElementById('cat-edit-icon').value || '<svg viewBox="0 0 24 24" fill="#fff"><circle cx="12" cy="12" r="10"/></svg>';
-        if(id) { const idx = this.data.categories.findIndex(c=>c.id===id); if(idx > -1) this.data.categories[idx] = { id, name, icon }; } else { this.data.categories.push({ id: 'c'+Date.now(), name, icon }); }
+        if(id) { const idx = this.data.categories.findIndex(c=>c.id===id); if(idx > -1) this.data.categories[idx] = { id, name, icon }; } else { this.data.categories.push({ id: 'c'+uid(), name, icon }); }
         this.save(); document.getElementById('modal-cat-edit').classList.remove('active'); this.renderCatList(); document.getElementById('modal-cats').classList.add('active'); this.renderExtendedTabs();
     }
-    delCat(i) { if(confirm('删除此分类?')) { this.data.categories.splice(i,1); this.save(); this.renderCatList(); this.renderExtendedTabs(); } }
+    delCat(i) {
+        if(!confirm('删除此分类?')) return;
+        const removed = this.data.categories.splice(i, 1)[0];
+        const fallback = this.data.categories[0]?.id;
+        if (fallback) {
+            this.data.shortcuts.forEach(s => { if (s.cat === removed.id) s.cat = fallback; });
+        } else {
+            this.data.shortcuts = this.data.shortcuts.filter(s => s.cat !== removed.id);
+        }
+        if (this.state.catFilter === removed.id) this.state.catFilter = fallback || 'all';
+        this.save(); this.renderCatList(); this.renderExtendedTabs(); this.renderShortcuts();
+    }
     openEngineEdit(id) {
         document.getElementById('modal-engine').classList.add('active');
         const e = id ? this.data.engines.find(x => x.id === id) : null;
@@ -872,15 +981,15 @@ class NueTab {
     }
     saveEngine() {
         const id = document.getElementById('eng-id').value;
-        const obj = { id: id || 'eng'+Date.now(), name: document.getElementById('eng-name').value, url: document.getElementById('eng-url').value, icon: document.getElementById('eng-icon').value };
-        if(id) { const i = this.data.engines.findIndex(x=>x.id===id); this.data.engines[i] = obj; } else this.data.engines.push(obj);
+        const obj = { id: id || 'eng'+uid(), name: document.getElementById('eng-name').value, url: document.getElementById('eng-url').value, icon: document.getElementById('eng-icon').value };
+        if(id) { const i = this.data.engines.findIndex(x=>x.id===id); if(i > -1) this.data.engines[i] = obj; else this.data.engines.push(obj); } else this.data.engines.push(obj);
         this.save(); this.bindSearchEvents(); document.getElementById('modal-engine').classList.remove('active'); this.renderEngineList();
     }
     renderEngineList() {
         const list = document.getElementById('engine-list-editor'); list.innerHTML = '';
         this.data.engines.forEach((e, idx) => {
             const div = document.createElement('div'); div.className = 'list-row';
-            div.innerHTML = `<div class="list-info"><img alt="" style="display:none"><span>${e.name}</span></div><div><button class="btn btn-secondary">编辑</button> <button class="btn btn-danger">×</button></div>`;
+            div.innerHTML = `<div class="list-info"><img alt="" style="display:none"><span>${escapeHtml(e.name)}</span></div><div><button class="btn btn-secondary">编辑</button> <button class="btn btn-danger">×</button></div>`;
             const img = div.querySelector('img'); let iconUrl = e.icon; if(!iconUrl) iconUrl = this.getIconUrl(e.url.split('?')[0]); if(iconUrl) assetManager.loadImg(img, iconUrl);
             div.querySelector('.btn-secondary').onclick = () => this.openEngineEdit(e.id);
             div.querySelector('.btn-danger').onclick = () => this.delEngine(idx);
@@ -895,12 +1004,14 @@ window.app = new NueTab();
 // 监听来自 background 的消息
 if (typeof chrome !== 'undefined' && chrome.runtime) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.action === 'addShortcut') {
-      const newItem = message.shortcut;
+    if (message.action === 'addShortcut' && message.shortcut) {
+      // 走 normalizeData 校验清洗数据
+      const merged = window.app.normalizeData({ shortcuts: [message.shortcut] });
+      const newItem = merged && merged.shortcuts[0];
+      if (!newItem) { sendResponse({ success: false, message: '无效数据' }); return true; }
       // 检查是否已存在
       const exists = window.app.data.shortcuts.some(s => s.url === newItem.url);
       if (!exists) {
-        newItem.cat = window.app.data.categories[0]?.id || 'c_sys';
         window.app.data.shortcuts.push(newItem);
         window.app.save();
         window.app.renderShortcuts();
@@ -912,15 +1023,5 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
     }
     return true;
   });
-  
-  // 从 chrome.storage 加载数据（如果有）
-  chrome.storage.local.get(['nuetab_ult_data'], (result) => {
-    if (result.nuetab_ult_data && !localStorage.getItem('nuetab_ult_data')) {
-      localStorage.setItem('nuetab_ult_data', result.nuetab_ult_data);
-      if (window.app) {
-        window.app.loadData();
-        window.app.renderShortcuts();
-      }
-    }
-  });
 }
+
